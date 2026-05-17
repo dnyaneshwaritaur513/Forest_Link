@@ -1,0 +1,592 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>TrekGuard — Base Station</title>
+<link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Rajdhani:wght@400;600;700&display=swap" rel="stylesheet"/>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+  :root {
+    --bg: #0a0e0f;
+    --panel: #111618;
+    --border: #1e2d2f;
+    --green: #00e5a0;
+    --red: #ff3b5c;
+    --yellow: #f5c400;
+    --blue: #00aaff;
+    --orange: #ff8c00;
+    --text: #cde8e2;
+    --muted: #4a6a65;
+    --font-mono: 'Share Tech Mono', monospace;
+    --font-ui: 'Rajdhani', sans-serif;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: var(--bg); color: var(--text);
+    font-family: var(--font-ui); height: 100vh;
+    display: grid; grid-template-rows: 56px 1fr 90px; overflow: hidden;
+  }
+
+  /* ── START SCREEN ── */
+  #start-screen {
+    position: fixed; inset: 0; background: rgba(10,14,15,0.98);
+    z-index: 10000; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; text-align: center;
+  }
+  .start-btn {
+    background: var(--green); color: #000; padding: 20px 50px;
+    border: none; border-radius: 50px; font-family: var(--font-ui);
+    font-weight: 700; font-size: 22px; letter-spacing: 2px; cursor: pointer;
+    box-shadow: 0 0 30px rgba(0,229,160,0.4); transition: transform 0.2s;
+  }
+  .start-btn:hover { transform: scale(1.05); }
+
+  /* ── RELAY FAILURE BANNER ── */
+  #relay-banner {
+    display: none;
+    position: fixed; top: 56px; left: 0; right: 0; z-index: 9000;
+    background: rgba(255,60,0,0.92); color: #fff;
+    font-family: var(--font-mono); font-size: 13px; font-weight: 700;
+    padding: 10px 24px; letter-spacing: 1px;
+    display: none; align-items: center; justify-content: space-between;
+    border-bottom: 2px solid var(--red);
+    animation: bannerPulse 1s infinite;
+  }
+  #relay-banner.show { display: flex; }
+  @keyframes bannerPulse { 0%,100%{opacity:1} 50%{opacity:0.82} }
+  .banner-left { display: flex; align-items: center; gap: 12px; }
+  .banner-dot {
+    width: 10px; height: 10px; border-radius: 50%;
+    background: #fff; animation: bannerPulse 0.6s infinite;
+  }
+  .relay-path {
+    display: flex; align-items: center; gap: 8px;
+    font-size: 12px; opacity: 0.9;
+  }
+  .relay-path span { padding: 2px 8px; border-radius: 4px; background: rgba(255,255,255,0.15); }
+  .relay-arrow { opacity: 0.7; }
+
+  /* ── HEADER ── */
+  header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 0 24px; border-bottom: 1px solid var(--border); background: var(--panel);
+  }
+  .logo { display: flex; align-items: center; gap: 12px; }
+  .logo-icon { width:32px;height:32px;background:var(--green);border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:16px; }
+  .logo-text { font-size:20px;font-weight:700;letter-spacing:2px;color:#fff; }
+  .logo-sub { font-size:11px;color:var(--muted);font-family:var(--font-mono);margin-top:1px; }
+  .header-right { display:flex;align-items:center;gap:20px; }
+  .status-pill {
+    display:flex;align-items:center;gap:6px;
+    background:rgba(0,229,160,0.1);border:1px solid rgba(0,229,160,0.3);
+    border-radius:20px;padding:4px 12px;font-size:12px;font-family:var(--font-mono);color:var(--green);
+  }
+  .status-dot { width:7px;height:7px;border-radius:50%;background:var(--green);animation:pulse 1.5s infinite; }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
+  .clock { font-family:var(--font-mono);font-size:13px;color:var(--muted); }
+
+  /* ── MAIN LAYOUT ── */
+  main { display:grid;grid-template-columns:1fr 340px;overflow:hidden; }
+  #map { width:100%;height:100%;background:#0d1a1c; }
+  .right-panel {
+    background:var(--panel);border-left:1px solid var(--border);
+    display:flex;flex-direction:column;overflow-y:auto;padding:16px;gap:12px;
+  }
+  .panel-title { font-size:11px;font-family:var(--font-mono);color:var(--muted);letter-spacing:2px;text-transform:uppercase;margin-bottom:4px; }
+
+  /* ── TREKKER CARDS ── */
+  .trekker-card {
+    background:var(--bg);border:1px solid var(--border);
+    border-radius:10px;padding:14px;transition:border-color 0.3s,box-shadow 0.3s;
+  }
+  .trekker-card.alert { border-color:var(--red);box-shadow:0 0 16px rgba(255,59,92,0.25); }
+  .trekker-card.warn  { border-color:var(--yellow); }
+  .trekker-card.relay-active { border-color:var(--orange);box-shadow:0 0 16px rgba(255,140,0,0.2); }
+  .trekker-card.link-lost { border-color:var(--red);opacity:0.75; }
+
+  .trekker-header { display:flex;align-items:center;justify-content:space-between;margin-bottom:12px; }
+  .trekker-name { font-size:16px;font-weight:700;color:#fff; }
+  .trekker-id { font-size:11px;font-family:var(--font-mono);color:var(--muted);margin-left:6px; }
+
+  /* ── LINK LOST OVERLAY on Trek 1 card ── */
+  .link-lost-bar {
+    display:none;align-items:center;justify-content:center;gap:8px;
+    background:rgba(255,59,92,0.12);border:1px solid rgba(255,59,92,0.3);
+    border-radius:6px;padding:6px 10px;margin-bottom:10px;
+    font-family:var(--font-mono);font-size:11px;color:var(--red);font-weight:700;
+    animation: blink 0.8s infinite;
+  }
+  .link-lost-bar.show { display:flex; }
+
+  /* ── RELAY ACTIVE BAR on Trek 2 card ── */
+  .relay-active-bar {
+    display:none;align-items:center;justify-content:center;gap:8px;
+    background:rgba(255,140,0,0.1);border:1px solid rgba(255,140,0,0.35);
+    border-radius:6px;padding:6px 10px;margin-bottom:10px;
+    font-family:var(--font-mono);font-size:11px;color:var(--orange);font-weight:700;
+  }
+  .relay-active-bar.show { display:flex; }
+
+  /* ── BADGES ── */
+  .badge { font-size:10px;font-family:var(--font-mono);padding:2px 8px;border-radius:4px;font-weight:700; }
+  .badge-ok     { background:rgba(0,229,160,0.15);color:var(--green); }
+  .badge-warn   { background:rgba(245,196,0,0.15);color:var(--yellow); }
+  .badge-sos    { background:rgba(255,59,92,0.2);color:var(--red);animation:blink 0.8s infinite; }
+  .badge-fall   { background:rgba(255,59,92,0.2);color:var(--red);animation:blink 0.8s infinite; }
+  .badge-lost   { background:rgba(255,59,92,0.15);color:var(--red); }
+  .badge-relay  { background:rgba(255,140,0,0.15);color:var(--orange);border:1px solid rgba(255,140,0,0.3); }
+  .badge-direct { background:rgba(0,229,160,0.12);color:var(--green);border:1px solid rgba(0,229,160,0.3); }
+  @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.3} }
+
+  /* ── VITALS ── */
+  .vitals { display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:6px;margin-bottom:10px; }
+  .vital-box { text-align:center; }
+  .vital-value { font-size:20px;font-weight:700;font-family:var(--font-mono);color:var(--green);line-height:1; }
+  .vital-value.warn  { color:var(--yellow); }
+  .vital-value.alert { color:var(--red); }
+  .vital-label { font-size:10px;color:var(--muted);font-family:var(--font-mono);margin-top:3px; }
+  .fall-indicator {
+    display:flex;align-items:center;justify-content:center;gap:4px;
+    border-radius:6px;padding:4px 6px;font-family:var(--font-mono);font-size:11px;font-weight:700;transition:background 0.3s,color 0.3s;
+  }
+  .fall-indicator.safe   { background:rgba(0,229,160,0.1);color:var(--green);border:1px solid rgba(0,229,160,0.2); }
+  .fall-indicator.danger { background:rgba(255,59,92,0.15);color:var(--red);border:1px solid rgba(255,59,92,0.4);animation:blink 0.8s infinite; }
+
+  /* ── ACCEL BAR ── */
+  .accel-bar-wrap { margin-top:6px;margin-bottom:8px; }
+  .accel-bar-label { font-size:10px;font-family:var(--font-mono);color:var(--muted);display:flex;justify-content:space-between;margin-bottom:3px; }
+  .accel-bar-track { height:5px;background:var(--border);border-radius:3px;overflow:hidden;position:relative; }
+  .accel-bar-fill  { height:100%;border-radius:3px;transition:width 0.4s,background 0.4s; }
+  .accel-bar-track::after { content:'';position:absolute;top:0;bottom:0;left:52%;width:2px;background:var(--yellow);opacity:0.7; }
+
+  /* ── SIGNAL + ROUTE ROW ── */
+  .signal-bar { height:3px;background:var(--border);border-radius:2px;overflow:hidden;margin-top:6px; }
+  .signal-fill { height:100%;border-radius:2px;background:var(--green);transition:width 0.5s; }
+  .route-row {
+    display:flex;align-items:center;justify-content:space-between;
+    margin-top:8px;padding-top:8px;border-top:1px solid var(--border);
+    font-family:var(--font-mono);font-size:11px;color:var(--muted);
+  }
+  .hop-dots { display:flex;gap:4px;align-items:center; }
+  .hop-dot { width:8px;height:8px;border-radius:50%;background:var(--border);transition:background 0.4s; }
+  .hop-dot.active { background:var(--green); }
+  .hop-dot.relay  { background:var(--orange); }
+
+  /* ── FOOTER ── */
+  footer { display:grid;grid-template-columns:repeat(4,1fr);border-top:1px solid var(--border);background:var(--panel); }
+  .stat-box { display:flex;flex-direction:column;align-items:center;justify-content:center;border-right:1px solid var(--border);padding:12px; }
+  .stat-box:last-child { border-right:none; }
+  .stat-value { font-size:28px;font-weight:700;font-family:var(--font-mono);color:#fff;line-height:1; }
+  .stat-label { font-size:11px;color:var(--muted);margin-top:4px;font-family:var(--font-mono); }
+
+  /* ── SOS OVERLAY ── */
+  #sos-overlay { display:none;position:fixed;inset:0;background:rgba(255,59,92,0.12);border:5px solid var(--red);z-index:9999;pointer-events:none;animation:sosBorder 0.8s infinite; }
+  @keyframes sosBorder { 0%,100%{opacity:1} 50%{opacity:0.2} }
+  #sos-toast {
+    display:none;position:fixed;top:70px;left:50%;transform:translateX(-50%);
+    background:var(--red);color:#fff;font-family:var(--font-mono);font-size:15px;font-weight:700;
+    padding:14px 28px;border-radius:10px;z-index:10000;
+    box-shadow:0 0 30px rgba(255,59,92,0.6);animation:blink 0.8s infinite;letter-spacing:1px;
+  }
+</style>
+</head>
+<body>
+
+<!-- START SCREEN -->
+<div id="start-screen">
+  <div class="logo-icon" style="width:64px;height:64px;font-size:32px;margin-bottom:20px;">🏔</div>
+  <h1 style="color:#fff;letter-spacing:5px;margin-bottom:10px;">TREKGUARD BASE STATION</h1>
+  <p style="color:var(--muted);font-family:var(--font-mono);margin-bottom:30px;">LINK STATUS: WAITING FOR LOCALHOST:5000</p>
+  <button class="start-btn" onclick="startSystem()">INITIALIZE MESH NETWORK</button>
+</div>
+
+<!-- RELAY FAILURE BANNER -->
+<div id="relay-banner">
+  <div class="banner-left">
+    <div class="banner-dot"></div>
+    <span>TREK 1 DIRECT LINK FAILED — DATA NOW RELAYING VIA TREK 2</span>
+  </div>
+  <div class="relay-path">
+    <span>TREK 1</span>
+    <span class="relay-arrow">→</span>
+    <span style="background:rgba(255,140,0,0.3)">TREK 2 RELAY</span>
+    <span class="relay-arrow">→</span>
+    <span>BASE</span>
+  </div>
+</div>
+
+<div id="sos-overlay"></div>
+<div id="sos-toast">🆘 SOS ALERT FROM TREKKER 1</div>
+
+<header>
+  <div class="logo">
+    <div class="logo-icon">🏔</div>
+    <div>
+      <div class="logo-text">TREKGUARD</div>
+      <div class="logo-sub">DYPCOE Akurdi · base station live feed</div>
+    </div>
+  </div>
+  <div class="header-right">
+    <div class="status-pill"><div class="status-dot"></div> LIVE</div>
+    <div class="clock" id="clock">--:--:--</div>
+  </div>
+</header>
+
+<main>
+  <div id="map"></div>
+  <div class="right-panel">
+    <div class="panel-title">Active Trekkers</div>
+
+    <!-- ── TREK 1 CARD (real hardware) ── -->
+    <div class="trekker-card" id="card-T01">
+      <div class="trekker-header">
+        <div>
+          <span class="trekker-name">Trekker</span>
+          <span class="trekker-id">T01 · Trek 1</span>
+        </div>
+        <span class="badge badge-ok" id="badge-T01">OK</span>
+      </div>
+
+      <!-- Link lost warning bar (shown when FAIL) -->
+      <div class="link-lost-bar" id="lostbar-T01">
+        ⚠ DIRECT LINK LOST · REROUTING VIA TREK 2
+      </div>
+
+      <div class="vitals">
+        <div class="vital-box">
+          <div class="vital-value" id="bpm-T01">--</div>
+          <div class="vital-label">bpm</div>
+        </div>
+        <div class="vital-box">
+          <div class="vital-value" id="spo2-T01">--%</div>
+          <div class="vital-label">SpO2</div>
+        </div>
+        <div class="vital-box">
+          <div class="vital-value" id="accel-T01" style="font-size:16px">--</div>
+          <div class="vital-label">m/s²</div>
+        </div>
+        <div class="vital-box">
+          <div class="fall-indicator safe" id="fall-T01">✓ OK</div>
+          <div class="vital-label" style="margin-top:6px">fall</div>
+        </div>
+      </div>
+
+      <div class="accel-bar-wrap">
+        <div class="accel-bar-label">
+          <span>ACCEL G-FORCE</span>
+          <span id="accel-raw-T01">0.00 m/s² · threshold 13</span>
+        </div>
+        <div class="accel-bar-track">
+          <div class="accel-bar-fill" id="accel-fill-T01" style="width:0%;background:var(--green)"></div>
+        </div>
+      </div>
+
+      <div class="signal-bar"><div class="signal-fill" id="signal-T01" style="width:0%"></div></div>
+
+      <div class="route-row">
+        <span>MESH ROUTE</span>
+        <span class="badge badge-direct" id="route-badge-T01">DIRECT · 1 HOP</span>
+        <div class="hop-dots">
+          <div class="hop-dot active" id="hop1-T01"></div>
+          <div class="hop-dot" id="hop2-T01"></div>
+          <div class="hop-dot active" id="hop3-T01"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── TREK 2 CARD (simulated + relay) ── -->
+    <div class="trekker-card" id="card-T02">
+      <div class="trekker-header">
+        <div>
+          <span class="trekker-name">Trekker</span>
+          <span class="trekker-id">T02 · Trek 2</span>
+        </div>
+        <span class="badge badge-ok" id="badge-T02">OK</span>
+      </div>
+
+      <!-- Relay active bar (shown when FAIL) -->
+      <div class="relay-active-bar" id="relaybar-T02">
+        ⚡ RELAY ACTIVE · FORWARDING TREK 1 DATA
+      </div>
+
+      <div class="vitals">
+        <div class="vital-box">
+          <div class="vital-value" id="bpm-T02">--</div>
+          <div class="vital-label">bpm</div>
+        </div>
+        <div class="vital-box">
+          <div class="vital-value" id="spo2-T02">--%</div>
+          <div class="vital-label">SpO2</div>
+        </div>
+        <div class="vital-box">
+          <div class="vital-value" id="accel-T02" style="font-size:16px">--</div>
+          <div class="vital-label">m/s²</div>
+        </div>
+        <div class="vital-box">
+          <div class="fall-indicator safe" id="fall-T02">✓ OK</div>
+          <div class="vital-label" style="margin-top:6px">fall</div>
+        </div>
+      </div>
+
+      <div class="signal-bar"><div class="signal-fill" id="signal-T02" style="width:75%"></div></div>
+
+      <div class="route-row">
+        <span>MESH ROUTE</span>
+        <span class="badge badge-direct" id="route-badge-T02">DIRECT · 1 HOP</span>
+        <div class="hop-dots">
+          <div class="hop-dot active" id="hop1-T02"></div>
+          <div class="hop-dot" id="hop2-T02"></div>
+          <div class="hop-dot active" id="hop3-T02"></div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</main>
+
+<footer>
+  <div class="stat-box">
+    <div class="stat-value" id="active-nodes">2</div>
+    <div class="stat-label">active nodes</div>
+  </div>
+  <div class="stat-box">
+    <div class="stat-value" id="mesh-mode">DIRECT</div>
+    <div class="stat-label">mesh mode</div>
+  </div>
+  <div class="stat-box">
+    <div class="stat-value" id="sos-count">0</div>
+    <div class="stat-label">SOS alerts</div>
+  </div>
+  <div class="stat-box">
+    <div class="stat-value" id="update-count">0</div>
+    <div class="stat-label">data packets</div>
+  </div>
+</footer>
+
+<script>
+const FALL_THRESHOLD = 13.0;
+let systemActive = false;
+let sosWasActive = false;
+let sosCount = 0, updateCount = 0;
+let lastMode = 'DIRECT';
+
+// ── MAP ──
+const map = L.map('map', { zoomControl: true }).setView([18.6453, 73.7583], 17);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  attribution: '© OpenStreetMap contributors', maxZoom: 19
+}).addTo(map);
+
+const baseIcon = L.divIcon({
+  html: '<div style="background:#00e5a0;color:#000;font-weight:700;font-size:11px;width:24px;height:24px;display:flex;align-items:center;justify-content:center;border-radius:4px;font-family:monospace;">B</div>',
+  iconSize: [24,24], iconAnchor: [12,12]
+});
+L.marker([18.6453, 73.7583], { icon: baseIcon }).addTo(map).bindPopup('Base Station — DYPCOE Akurdi');
+
+const t1Icon = L.divIcon({
+  html: '<div style="background:#ff3b5c;width:16px;height:16px;border-radius:50%;border:2px solid #fff;box-shadow:0 0 10px rgba(255,59,92,0.8);"></div>',
+  iconSize: [16,16], iconAnchor: [8,8]
+});
+const t2Icon = L.divIcon({
+  html: '<div style="background:#00aaff;width:14px;height:14px;border-radius:50%;border:2px solid #fff;box-shadow:0 0 8px rgba(0,170,255,0.8);"></div>',
+  iconSize: [14,14], iconAnchor: [7,7]
+});
+
+let t1Marker = L.marker([18.6453, 73.7583], { icon: t1Icon }).addTo(map).bindPopup('Trek 1');
+let t2Marker = L.marker([18.6461, 73.7595], { icon: t2Icon }).addTo(map).bindPopup('Trek 2');
+let t1Path = L.polyline([], { color: '#ff3b5c', dashArray: '6,6', weight: 2 }).addTo(map);
+let t1Coords = [], t2Coords = [];
+
+// ── CLOCK ──
+setInterval(() => {
+  document.getElementById('clock').textContent = new Date().toLocaleTimeString('en-IN', { hour12: false });
+}, 1000);
+
+// ── START ──
+async function startSystem() {
+  try {
+    await fetch('http://localhost:5000/start', { method: 'POST' });
+    systemActive = true;
+    document.getElementById('start-screen').style.display = 'none';
+  } catch(e) {
+    alert("Python Server not found! Run server.py first.");
+  }
+}
+
+// ── SOS ──
+function triggerSOSAlert() {
+  sosCount++;
+  document.getElementById('sos-count').textContent = sosCount;
+  document.getElementById('sos-toast').style.display = 'block';
+  document.getElementById('sos-overlay').style.display = 'block';
+  setTimeout(() => {
+    document.getElementById('sos-toast').style.display = 'none';
+    document.getElementById('sos-overlay').style.display = 'none';
+  }, 5000);
+}
+
+// ── UPDATE ONE TREKKER CARD ──
+function updateCard(id, d, isRelay) {
+  const bpmEl   = document.getElementById('bpm-' + id);
+  const spo2El  = document.getElementById('spo2-' + id);
+  const accelEl = document.getElementById('accel-' + id);
+  const fillEl  = document.getElementById('accel-fill-' + id);
+  const rawEl   = document.getElementById('accel-raw-' + id);
+  const fallEl  = document.getElementById('fall-' + id);
+  const card    = document.getElementById('card-' + id);
+  const badge   = document.getElementById('badge-' + id);
+
+  bpmEl.textContent = d.bpm > 0 ? d.bpm : '--';
+  bpmEl.className   = d.bpm > 120 ? 'vital-value alert' : (d.bpm > 100 ? 'vital-value warn' : 'vital-value');
+
+  spo2El.textContent = d.spo2 > 0 ? d.spo2 + '%' : '--%';
+  spo2El.className   = d.spo2 < 90 ? 'vital-value alert' : (d.spo2 < 95 ? 'vital-value warn' : 'vital-value');
+
+  const accel = d.accel || 0;
+  if (accelEl) {
+    accelEl.textContent = accel.toFixed(1);
+    const pct = Math.min(100, (accel / 25) * 100);
+    if (fillEl) {
+      fillEl.style.width = pct + '%';
+      fillEl.style.background = accel >= FALL_THRESHOLD ? 'var(--red)' : (accel >= FALL_THRESHOLD * 0.8 ? 'var(--yellow)' : 'var(--green)');
+    }
+    if (rawEl) rawEl.textContent = accel.toFixed(2) + ' m/s² · threshold ' + FALL_THRESHOLD;
+  }
+
+  if (d.sos) {
+    if (id === 'T01' && !sosWasActive) triggerSOSAlert();
+    if (id === 'T01') sosWasActive = true;
+    card.className = 'trekker-card alert';
+    badge.textContent = 'SOS'; badge.className = 'badge badge-sos';
+  } else if (d.fall) {
+    if (id === 'T01') sosWasActive = false;
+    fallEl.textContent = '⚠ FALL'; fallEl.className = 'fall-indicator danger';
+    card.className = 'trekker-card alert';
+    badge.textContent = 'FALL'; badge.className = 'badge badge-fall';
+  } else {
+    if (id === 'T01') sosWasActive = false;
+    fallEl.textContent = '✓ OK'; fallEl.className = 'fall-indicator safe';
+    const isWarn = (d.bpm > 110 || d.spo2 < 94);
+    if (!isRelay) {
+      badge.textContent = isWarn ? 'WARN' : 'OK';
+      badge.className   = isWarn ? 'badge badge-warn' : 'badge badge-ok';
+      card.className    = isWarn ? 'trekker-card warn' : 'trekker-card';
+    }
+  }
+}
+
+// ── SET ROUTE BADGE ──
+function setRoute(id, isRelay) {
+  const routeBadge = document.getElementById('route-badge-' + id);
+  const h1 = document.getElementById('hop1-' + id);
+  const h2 = document.getElementById('hop2-' + id);
+  const h3 = document.getElementById('hop3-' + id);
+  if (isRelay) {
+    routeBadge.textContent = 'VIA TREK 2 · 2 HOPS';
+    routeBadge.className = 'badge badge-relay';
+    h1.className = 'hop-dot relay';
+    h2.className = 'hop-dot relay';
+    h3.className = 'hop-dot relay';
+  } else {
+    routeBadge.textContent = 'DIRECT · 1 HOP';
+    routeBadge.className = 'badge badge-direct';
+    h1.className = 'hop-dot active';
+    h2.className = 'hop-dot';
+    h3.className = 'hop-dot active';
+  }
+}
+
+// ── MAIN FETCH ──
+async function fetchData() {
+  if (!systemActive) return;
+  try {
+    const res = await fetch('http://localhost:5000/data');
+    const d = await res.json();
+    if (!d.active) return;
+
+    updateCount++;
+    document.getElementById('update-count').textContent = updateCount;
+
+    const isRelay = (d.mode === 'RELAY');
+
+    // ── Mode change handling ──
+    if (d.mode !== lastMode) {
+      lastMode = d.mode;
+      const banner = document.getElementById('relay-banner');
+      const meshMode = document.getElementById('mesh-mode');
+
+      if (isRelay) {
+        banner.classList.add('show');
+        meshMode.textContent = 'RELAY';
+        meshMode.style.color = 'var(--orange)';
+      } else {
+        banner.classList.remove('show');
+        meshMode.textContent = 'DIRECT';
+        meshMode.style.color = '';
+      }
+    }
+
+    // ── TREK 1 card ──
+    updateCard('T01', d.t1, isRelay);
+    const lostBar = document.getElementById('lostbar-T01');
+    const card01  = document.getElementById('card-T01');
+    const badge01 = document.getElementById('badge-T01');
+    if (isRelay) {
+      lostBar.classList.add('show');
+      if (!d.t1.sos && !d.t1.fall) {
+        card01.className = 'trekker-card link-lost';
+        badge01.textContent = 'RELAY';
+        badge01.className   = 'badge badge-relay';
+      }
+      setRoute('T01', true);
+    } else {
+      lostBar.classList.remove('show');
+      setRoute('T01', false);
+    }
+    document.getElementById('signal-T01').style.width =
+      isRelay ? '30%' : Math.min(100, 70 + (updateCount % 10) * 3) + '%';
+
+    // ── TREK 2 card ──
+    updateCard('T02', d.t2, isRelay);
+    const relayBar = document.getElementById('relaybar-T02');
+    const card02   = document.getElementById('card-T02');
+    const badge02  = document.getElementById('badge-T02');
+    if (isRelay) {
+      relayBar.classList.add('show');
+      card02.className      = 'trekker-card relay-active';
+      badge02.textContent   = 'RELAY';
+      badge02.className     = 'badge badge-relay';
+      setRoute('T02', true);
+    } else {
+      relayBar.classList.remove('show');
+      if (!d.t2.sos && !d.t2.fall) {
+        card02.className    = 'trekker-card';
+        badge02.textContent = 'OK';
+        badge02.className   = 'badge badge-ok';
+      }
+      setRoute('T02', false);
+    }
+    document.getElementById('signal-T02').style.width =
+      isRelay ? '90%' : Math.min(100, 65 + (updateCount % 8) * 4) + '%';
+
+    // ── Map ──
+    if (d.t1.lat && d.t1.lon) {
+      const pos = [d.t1.lat, d.t1.lon];
+      t1Marker.setLatLng(pos);
+      t1Coords.push(pos);
+      t1Path.setLatLngs(t1Coords);
+    }
+    if (d.t2.lat && d.t2.lon) {
+      t2Marker.setLatLng([d.t2.lat, d.t2.lon]);
+    }
+
+    document.getElementById('active-nodes').textContent = '2';
+
+  } catch(e) {}
+}
+
+setInterval(fetchData, 1500);
+</script>
+</body>
+</html>
