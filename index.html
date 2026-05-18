@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <title>TrekGuard — Base Station</title>
+    <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Rajdhani:wght@400;600;700&display=swap" rel="stylesheet"/>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div id="start-screen">
+    <div class="logo-icon" style="width:64px;height:64px;font-size:32px;margin-bottom:20px;">🏔</div>
+    <h1 style="color:#fff;letter-spacing:5px;margin-bottom:10px;">TREKGUARD BASE STATION</h1>
+    <p style="color:var(--muted);font-family:var(--font-mono);margin-bottom:30px;">LINK STATUS: WAITING FOR LOCALHOST:5000</p>
+    <button class="start-btn" onclick="startSystem()">INITIALIZE MESH NETWORK</button>
+</div>
+
+<div id="relay-banner">
+    <div class="banner-left">
+        <div class="banner-dot"></div>
+        <span>TREK 1 DIRECT LINK FAILED — DATA NOW RELAYING VIA TREK 2</span>
+    </div>
+    <div class="relay-path">
+        <span>TREK 1</span><span class="relay-arrow">→</span>
+        <span style="background:rgba(255,140,0,0.3)">TREK 2 RELAY</span><span class="relay-arrow">→</span>
+        <span>BASE</span>
+    </div>
+</div>
+
+<div id="sos-overlay"></div>
+<div id="sos-toast">🆘 SOS ALERT FROM TREKKER 1</div>
+
+<header>
+    <div class="logo">
+        <div class="logo-icon">🏔</div>
+        <div>
+            <div class="logo-text">TREKGUARD</div>
+            <div class="logo-sub">DYPCOE Akurdi · base station live feed</div>
+        </div>
+    </div>
+    <div class="header-right">
+        <div class="status-pill"><div class="status-dot"></div> LIVE</div>
+        <div class="clock" id="clock">--:--:--</div>
+    </div>
+</header>
+
+<main>
+    <div id="map"></div>
+    <div class="right-panel">
+        <div class="panel-title">Active Trekkers</div>
+
+        <div class="trekker-card" id="card-T01">
+            <div class="trekker-header">
+                <div><span class="trekker-name">Trekker</span><span class="trekker-id">T01 · Trek 1</span></div>
+                <span class="badge badge-ok" id="badge-T01">OK</span>
+            </div>
+            <div class="link-lost-bar" id="lostbar-T01">⚠ DIRECT LINK LOST · REROUTING VIA TREK 2</div>
+            <div class="vitals">
+                <div class="vital-box"><div class="vital-value" id="bpm-T01">--</div><div class="vital-label">bpm</div></div>
+                <div class="vital-box"><div class="vital-value" id="spo2-T01">--%</div><div class="vital-label">SpO2</div></div>
+                <div class="vital-box"><div class="vital-value" id="accel-T01" style="font-size:16px">--</div><div class="vital-label">m/s²</div></div>
+                <div class="vital-box"><div class="fall-indicator safe" id="fall-T01">✓ OK</div><div class="vital-label" style="margin-top:6px">fall</div></div>
+            </div>
+            <div class="accel-bar-wrap">
+                <div class="accel-bar-label"><span>ACCEL G-FORCE</span><span id="accel-raw-T01">0.00 m/s²</span></div>
+                <div class="accel-bar-track"><div class="accel-bar-fill" id="accel-fill-T01" style="width:0%"></div></div>
+            </div>
+            <div class="signal-bar"><div class="signal-fill" id="signal-T01" style="width:0%"></div></div>
+            <div class="route-row">
+                <span>MESH ROUTE</span>
+                <span class="badge badge-direct" id="route-badge-T01">DIRECT · 1 HOP</span>
+                <div class="hop-dots">
+                    <div class="hop-dot" id="hop1-T01"></div><div class="hop-dot" id="hop2-T01"></div><div class="hop-dot" id="hop3-T01"></div>
+                </div>
+            </div>
+        </div>
+
+        <div class="trekker-card" id="card-T02">
+            <div class="trekker-header">
+                <div><span class="trekker-name">Trekker</span><span class="trekker-id">T02 · Trek 2</span></div>
+                <span class="badge badge-ok" id="badge-T02">OK</span>
+            </div>
+            <div class="relay-active-bar" id="relaybar-T02">⚡ RELAY ACTIVE · FORWARDING TREK 1 DATA</div>
+            <div class="vitals">
+                <div class="vital-box"><div class="vital-value" id="bpm-T02">--</div><div class="vital-label">bpm</div></div>
+                <div class="vital-box"><div class="vital-value" id="spo2-T02">--%</div><div class="vital-label">SpO2</div></div>
+                <div class="vital-box"><div class="vital-value" id="accel-T02" style="font-size:16px">--</div><div class="vital-label">m/s²</div></div>
+                <div class="vital-box"><div class="fall-indicator safe" id="fall-T02">✓ OK</div><div class="vital-label" style="margin-top:6px">fall</div></div>
+            </div>
+            <div class="signal-bar"><div class="signal-fill" id="signal-T02" style="width:75%"></div></div>
+            <div class="route-row">
+                <span>MESH ROUTE</span>
+                <span class="badge badge-direct" id="route-badge-T02">DIRECT · 1 HOP</span>
+                <div class="hop-dots">
+                    <div class="hop-dot" id="hop1-T02"></div><div class="hop-dot" id="hop2-T02"></div><div class="hop-dot" id="hop3-T02"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+</main>
+
+<footer>
+    <div class="stat-box"><div class="stat-value" id="active-nodes">2</div><div class="stat-label">active nodes</div></div>
+    <div class="stat-box"><div class="stat-value" id="mesh-mode">DIRECT</div><div class="stat-label">mesh mode</div></div>
+    <div class="stat-box"><div class="stat-value" id="sos-count">0</div><div class="stat-label">SOS alerts</div></div>
+    <div class="stat-box"><div class="stat-value" id="update-count">0</div><div class="stat-label">data packets</div></div>
+</footer>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="script.js"></script>
+</body>
+</html>
